@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
 from Api import Poll, Talk, Channel
 from Gen.ttypes import *
+import requests
+import shutil
+import json
+import subprocess
+from random import randint
+from gtts import gTTS
+from bs4 import BeautifulSoup
+import tempfile
+import urllib
+import urllib2
+import urllib3
+import timeit
 
 def def_callback(str):
     print(str)
@@ -91,11 +103,14 @@ class LINE:
         msg.text = text
         return self.Talk.client.sendMessage(0, msg)
         
+  def post_content(self, url, data=None, files=None):
+        return self._session.post(url, headers=self._headers, data=data, files=files)
+
   def sendImage(self, to_, path):
-        M = Message(to=to_,contentType = 1)
+        M = Message(to=to_, text=None, contentType = 1)
         M.contentMetadata = None
         M.contentPreview = None
-        M_id = self._client.sendMessage(M).id
+        M_id = self.Talk.client.sendMessage(0,M).id
         files = {
             'file': open(path, 'rb'),
         }
@@ -109,14 +124,150 @@ class LINE:
         data = {
             'params': json.dumps(params)
         }
-        r = self._client.post_content('https://os.line.naver.jp/talk/m/upload.nhn', data=data, files=files)
+        r = self.post_content('https://os.line.naver.jp/talk/m/upload.nhn', data=data, files=files)
+        print r
         if r.status_code != 201:
             raise Exception('Upload image failure.')
-        #r.content
         return True
-  def sendEvent(self, messageObject):
-        return self._client.sendEvent(0, messageObject)
 
+  def sendImageWithURL(self, to_, url):
+      path = '%s/pythonLine-%i.data' % (tempfile.gettempdir(), randint(0, 9))
+      r = requests.get(url, stream=True)
+      if r.status_code == 200:
+         with open(path, 'w') as f:
+            shutil.copyfileobj(r.raw, f)
+      else:
+         raise Exception('Download image failure.')
+      try:
+         self.sendImage(to_, path)
+      except Exception as e:
+         raise e
+
+  def sendAudioWithURL(self, to_, url):
+        path = 'pythonLiness.data'
+        r = requests.get(url, stream=True)
+        if r.status_code == 200:
+            with open(path, 'w') as f:
+                shutil.copyfileobj(r.raw, f)
+        else:
+            raise Exception('Download Audio failure.')
+        try:
+            self.sendAudio(to_, path)
+        except Exception as e:
+            raise e
+
+  def sendAudio(self, to_, path):
+        M = Message(to=to_,contentType = 3)
+        M.contentMetadata = None
+        M.contentPreview = None
+        M_id = self.Talk.client.sendMessage(0,M).id
+        files = {
+            'file': open(path, 'rb'),
+        }
+        params = {
+            'name': 'media',
+            'oid': M_id,
+            'size': len(open(path, 'rb').read()),
+            'type': 'audio',
+            'ver': '1.0',
+        }
+        data = {
+            'params': json.dumps(params)
+        }
+        r = self.post_content('https://os.line.naver.jp/talk/m/upload.nhn', data=data, files=files)
+        if r.status_code != 201:
+            raise Exception('Upload Audio failure.')
+        return True
+
+  def sendVideo(self, to_, path):
+        M = Message(to=to_,contentType = 2)
+        M.contentMetadata = {
+              'VIDLEN' : '0',
+              'DURATION' : '0'
+        }
+        M.contentPreview = None
+        M_id = self.Talk.client.sendMessage(0,M).id
+        files = {
+            'file': open(path, 'rb'),
+        }
+        params = {
+            'name': 'media',
+            'oid': M_id,
+            'size': len(open(path, 'rb').read()),
+            'type': 'video',
+            'ver': '1.0',
+        }
+        data = {
+            'params': json.dumps(params)
+        }
+        r = self.post_content('https://os.line.naver.jp/talk/m/upload.nhn', data=data, files=files)
+        if r.status_code != 201:
+            raise Exception('Upload image failure.')
+        return True
+
+  def download_page(url):
+    version = (3,0)
+    cur_version = sys.version_info
+    if cur_version >= version:
+        import urllib,request
+        try:
+            headers = {}
+            headers['User-Agent'] = "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+            req = urllib,request.Request(url, headers = headers)
+            resp = urllib,request.urlopen(req)
+            respData = str(resp.read())
+            return respData
+        except Exception as e:
+            print(str(e))
+    else:
+        import urllib2
+        try:
+            headers = {}
+            headers['User-Agent'] = "Mozilla/5.0 (X11; Linux i686) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.27 Safari/537.17"
+            req = urllib2.Request(url, headers = headers)
+            response = urllib2.urlopen(req)
+            page = response.read()
+            return page
+        except:
+            return"Page Not found"
+
+  def _images_get_next_item(s):
+    start_line = s.find('rg_di')
+    if start_line == -1:
+        end_quote = 0
+        link = "no_links"
+        return link, end_quote
+    else:
+        start_line = s.find('"class="rg_meta"')
+        start_content = s.find('"ou"',start_line+90)
+        end_content = s.find(',"ow"',start_content-90)
+        content_raw = str(s[start_content+6:end_content-1])
+        return content_raw, end_content
+
+  def _images_get_all_items(page):
+    items = []
+    while True:
+        item, end_content = _images_get_next_item(page)
+        if item == "no_links":
+            break
+        else:
+            items.append(item)
+            time.sleep(0.1)
+            page = page[end_content:]
+    return items
+
+  def sendVideoWithURL(self, to_, url):
+        path = 'pythonLines.data'
+        r = requests.get(url, stream=True)
+        if r.status_code == 200:
+            with open(path, 'w') as f:
+               shutil.copyfileobj(r.raw, f)
+        else:
+            raise Exception('Download Audio failure.')
+        try:
+            self.sendVideo(to_, path)
+        except Exception as e:
+            raise e
   def sendChatChecked(self, mid, lastMessageId):
         return self.Talk.client.sendChatChecked(0, mid, lastMessageId)
 
